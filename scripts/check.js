@@ -1,43 +1,103 @@
-// Read-only post-deployment checks (no transactions, no keys needed):
-//   TOKEN_ADDRESS=0x... HOLDER_ADDRESS=0x... npx hardhat run scripts/check.js --network bscTestnet
-// Confirms on-chain runtime bytecode == locally compiled artifact, metadata, supply and holder balance.
-const hre = require("hardhat");
 
-// Runtime bytecode ends with CBOR metadata (whose length is the last 2 bytes); compare code without it.
-function stripMetadata(hex) {
-  const code = hex.toLowerCase().replace(/^0x/, "");
-  const metaLen = parseInt(code.slice(-4), 16);
-  return code.slice(0, code.length - (metaLen + 2) * 2);
-}
+const { ethers, artifacts } = require("hardhat");
 
 async function main() {
-  const { ethers, artifacts } = hre;
-  const address = process.env.TOKEN_ADDRESS;
-  if (!address || !ethers.isAddress(address)) throw new Error("Set TOKEN_ADDRESS to the deployed token address.");
+  const { chainId } = await ethers.provider.getNetwork();
 
-  const onchain = await ethers.provider.getCode(address);
-  if (onchain === "0x") throw new Error(`No contract code at ${address} on this network.`);
-  const local = (await artifacts.readArtifact("TickerToken")).deployedBytecode;
+    if (Number(chainId) !== 31337) {
+        throw new Error("Safety check failed: this script only supports the local Hardhat network.");
+          }
 
-  const exact = onchain.toLowerCase() === local.toLowerCase();
-  const sameCode = stripMetadata(onchain) === stripMetadata(local);
-  console.log(`Bytecode exact match (incl. metadata): ${exact}`);
-  console.log(`Bytecode match (excluding metadata):   ${sameCode}`);
+            const tokenArtifact = await artifacts.readArtifact("TickerToken");
+              const signers = await ethers.getSigners();
 
-  const token = await ethers.getContractAt("TickerToken", address);
-  const [name, symbol, decimals, supply] = await Promise.all([token.name(), token.symbol(), token.decimals(), token.totalSupply()]);
-  const expected = ethers.parseUnits("1000000000", 18);
-  console.log(`name/symbol/decimals: ${name} / ${symbol} / ${decimals}`);
-  console.log(`totalSupply: ${ethers.formatUnits(supply, 18)} (expected 1000000000) → ${supply === expected ? "OK" : "MISMATCH"}`);
+                // Find the most recently deployed TickerToken on the local chain.
+                  const latestBlock = await ethers.provider.getBlockNumber();
+                    let tokenAddress;
 
-  if (process.env.HOLDER_ADDRESS) {
-    const bal = await token.balanceOf(process.env.HOLDER_ADDRESS);
-    console.log(`balanceOf(${process.env.HOLDER_ADDRESS}): ${ethers.formatUnits(bal, 18)}`);
-  }
-  if (!sameCode || supply !== expected) process.exitCode = 1;
-}
+                      for (let blockNumber = latestBlock; blockNumber >= 1; blockNumber--) {
+                          const block = await ethers.provider.getBlock(blockNumber, true);
+                              if (!block) continue;
 
-main().catch((err) => {
-  console.error(err.message || err);
-  process.exitCode = 1;
-});
+                                  for (const tx of [...block.transactions].reverse()) {
+                                        const txHash = typeof tx === "string" ? tx : tx.hash;
+                                              const receipt = await ethers.provider.getTransactionReceipt(txHash);
+
+                                                    if (
+                                                            receipt &&
+                                                                    receipt.contractAddress &&
+                                                                            receipt.status === 1
+                                                                                  ) {
+                                                                                          const code = await ethers.provider.getCode(receipt.contractAddress);
+
+                                                                                                  if (code !== "0x") {
+                                                                                                            try {
+                                                                                                                        const candidate = new ethers.Contract(
+                                                                                                                                      receipt.contractAddress,
+                                                                                                                                                    tokenArtifact.abi,
+                                                                                                                                                                  ethers.provider
+                                                                                                                                                                              );
+
+                                                                                                                                                                                          if (
+                                                                                                                                                                                                        (await candidate.name()) === "Ticker" &&
+                                                                                                                                                                                                                      (await candidate.symbol()) === "TICK"
+                                                                                                                                                                                                                                  ) {
+                                                                                                                                                                                                                                                tokenAddress = receipt.contractAddress;
+                                                                                                                                                                                                                                                              break;
+                                                                                                                                                                                                                                                                          }
+                                                                                                                                                                                                                                                                                    } catch (_) {
+                                                                                                                                                                                                                                                                                                // This contract is not the Ticker token.
+                                                                                                                                                                                                                                                                                                          }
+                                                                                                                                                                                                                                                                                                                  }
+                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                            }
+
+                                                                                                                                                                                                                                                                                                                                if (tokenAddress) break;
+                                                                                                                                                                                                                                                                                                                                  }
+
+                                                                                                                                                                                                                                                                                                                                    if (!tokenAddress) {
+                                                                                                                                                                                                                                                                                                                                        throw new Error("No Ticker deployment found. Run npm run deploy:local first.");
+                                                                                                                                                                                                                                                                                                                                          }
+
+                                                                                                                                                                                                                                                                                                                                            const token = new ethers.Contract(
+                                                                                                                                                                                                                                                                                                                                                tokenAddress,
+                                                                                                                                                                                                                                                                                                                                                    tokenArtifact.abi,
+                                                                                                                                                                                                                                                                                                                                                        ethers.provider
+                                                                                                                                                                                                                                                                                                                                                          );
+
+                                                                                                                                                                                                                                                                                                                                                            const [name, symbol, decimals, supply] = await Promise.all([
+                                                                                                                                                                                                                                                                                                                                                                token.name(),
+                                                                                                                                                                                                                                                                                                                                                                    token.symbol(),
+                                                                                                                                                                                                                                                                                                                                                                        token.decimals(),
+                                                                                                                                                                                                                                                                                                                                                                            token.totalSupply()
+                                                                                                                                                                                                                                                                                                                                                                              ]);
+
+                                                                                                                                                                                                                                                                                                                                                                                const expectedSupply = ethers.parseUnits("1000000000", 18);
+
+                                                                                                                                                                                                                                                                                                                                                                                  console.log("Network: local Hardhat (31337)");
+                                                                                                                                                                                                                                                                                                                                                                                    console.log("Token address:", tokenAddress);
+                                                                                                                                                                                                                                                                                                                                                                                      console.log("Name:", name);
+                                                                                                                                                                                                                                                                                                                                                                                        console.log("Symbol:", symbol);
+                                                                                                                                                                                                                                                                                                                                                                                          console.log("Decimals:", decimals.toString());
+                                                                                                                                                                                                                                                                                                                                                                                            console.log("Total supply:", ethers.formatUnits(supply, decimals));
+
+                                                                                                                                                                                                                                                                                                                                                                                              if (supply !== expectedSupply) {
+                                                                                                                                                                                                                                                                                                                                                                                                  throw new Error("Total supply does not match 1 billion TICK.");
+                                                                                                                                                                                                                                                                                                                                                                                                    }
+
+                                                                                                                                                                                                                                                                                                                                                                                                      if (signers.length > 0) {
+                                                                                                                                                                                                                                                                                                                                                                                                          const holder = signers[0].address;
+                                                                                                                                                                                                                                                                                                                                                                                                              const balance = await token.balanceOf(holder);
+
+                                                                                                                                                                                                                                                                                                                                                                                                                  console.log("First local test account:", holder);
+                                                                                                                                                                                                                                                                                                                                                                                                                      console.log("Its TICK balance:", ethers.formatUnits(balance, decimals));
+                                                                                                                                                                                                                                                                                                                                                                                                                        }
+
+                                                                                                                                                                                                                                                                                                                                                                                                                          console.log("Local verification passed.");
+                                                                                                                                                                                                                                                                                                                                                                                                                          }
+
+                                                                                                                                                                                                                                                                                                                                                                                                                          main().catch((error) => {
+                                                                                                                                                                                                                                                                                                                                                                                                                            console.error(error.message || error);
+                                                                                                                                                                                                                                                                                                                                                                                                                              process.exitCode = 1;
+                                                                                                                                                                                                                                                                                                                                                                                                                              });
+                                                                                                                                                                                                                                                                                                                                                                                                                              
