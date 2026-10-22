@@ -1,0 +1,22 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+*.key
+
+# dependencies & build output
+node_modules/
+artifacts/
+cache/
+coverage/
+coverage.json
+typechain-types/
+ignition/deployments/chain-31337/
+
+# misc
+.DS_Store
+*.log
+*.env
+credentials.json
+*.pem
+.credentials

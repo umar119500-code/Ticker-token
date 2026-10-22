@@ -1,0 +1,28 @@
+{
+  "name": "ticker-token-lab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fixed-supply BEP-20-compatible token (Ticker / TICK) for BNB Smart Chain — local + testnet development only.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.18 <23"
+  },
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "coverage": "hardhat coverage",
+    "node": "hardhat node",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:testnet": "hardhat run scripts/deploy.js --network bscTestnet",
+    "check:testnet": "hardhat run scripts/check.js --network bscTestnet",
+    "verify:testnet": "hardhat verify --network bscTestnet"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "5.0.0",
+    "dotenv": "16.4.7",
+    "hardhat": "2.29.1"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "5.6.1"
+  }
+}
